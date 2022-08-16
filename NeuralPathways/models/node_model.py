@@ -5,6 +5,10 @@ import itertools
 
 import numpy as np
 
+from abc import ABC, abstractmethod
+from pgmpy.models import BayesianNetwork
+from pgmpy.factors.discrete.CPD import TabularCPD
+
 from qtpy import QtWidgets
 from qtpy.QtCore import Signal, Qt
 from qtpy.QtGui import QIntValidator, QDoubleValidator, QStandardItem, QStandardItemModel
@@ -39,9 +43,10 @@ class VariableListData(NodeData):
 class VariableData(NodeData):
     data_type = NodeDataType("variable", "Variable")
 
-    def __init__(self, variable_id: str = 'x', variable_name: str = 'X'):
+    def __init__(self, variable_id: str = 'x', variable_name: str = 'X', discrete_values=2):
         self._var_id = variable_id
         self._var_name = variable_name
+        self._discrete_values = discrete_values
         self._lock = threading.RLock()
 
     @property
@@ -56,11 +61,15 @@ class VariableData(NodeData):
     def variable_id(self) -> str:
         return self._var_id
 
+    @property
+    def discrete_values(self) -> int:
+        return self._discrete_values
+
 
 class InitializerData(NodeData):
     data_type = NodeDataType("initialize", "Initialize")
 
-    def __init__(self):
+    def __init__(self, initializer):
         self._lock = threading.RLock()
 
     @property
@@ -93,16 +102,18 @@ class InitializerDataModel(NodeDataModel):
     def __init__(self, style=None, parent=None):
         super().__init__(style=style, parent=parent)
 
+        self._result = None
+
         if InitializerDataModel.instance is None:
             InitializerDataModel.instance = self
+            s.CAUSAL_GRAPH_INITIALIZER = self
             self._validation_state = NodeValidationState.valid
             self._validation_message = ''
+            self.compute()
         else:
             self._validation_state = NodeValidationState.error
             self._validation_message = "Only one initializer allowed. DELETE this node."
             self.data_invalidated.emit(0)
-
-        self._result = None
 
     def validation_state(self) -> NodeValidationState:
         return self._validation_state
@@ -110,8 +121,27 @@ class InitializerDataModel(NodeDataModel):
     def validation_message(self) -> str:
         return self._validation_message
 
+    def out_data(self, port: int) -> NodeData:
+        return self._result
+
     def compute(self):
-        return InitializerData()
+        print("INITIALIZER NODE COMPUTE")
+        if s.CAUSAL_GRAPH_DEFINITION is not None:
+            print("OVERWRITING EXISTING GRAPH")
+        s.CAUSAL_GRAPH_DEFINITION = BayesianNetwork()
+        self._result = InitializerData(self.instance)
+
+    def mark_stale(self):
+        self._validation_state = NodeValidationState.error
+        self._validation_message = "Graph has changed. Re-generate graph."
+        self.data_invalidated.emit(0)
+
+    def reset(self):
+        print("INITIALIZER RESET")
+        self.compute()
+        self._validation_state = NodeValidationState.valid
+        self._validation_message = 'Graph refreshed.'
+        self.data_updated.emit(0)
 
 
 class ExogenousVariableDataModel(NodeDataModel):
@@ -134,6 +164,16 @@ class ExogenousVariableDataModel(NodeDataModel):
         },
     }
 
+    num_instances = 0
+
+    class ExoNodeWidget(QtWidgets.QWidget):
+
+        def __init__(self, parent=None):
+            QtWidgets.QWidget.__init__(self, parent=None)
+
+            self.node_layout = QtWidgets.QVBoxLayout()
+            self.setLayout(self.node_layout)
+
     def __init__(self, style=None, parent=None):
         super().__init__(style=style, parent=parent)
 
@@ -143,9 +183,108 @@ class ExogenousVariableDataModel(NodeDataModel):
         self._validation_state = NodeValidationState.warning
         self._validation_message = 'Uninitialized'
 
+        self.main_widget = self.ExoNodeWidget()
+
+        self._var_name = str(self.name) + f'_{type(self).num_instances}'
+        self._var_id = self._var_name.lower()
+
+        type(self).num_instances += 1
+
+        self.node_label = QtWidgets.QLineEdit(self._var_name)
+        self.main_widget.node_layout.addWidget(self.node_label)
+        self.node_label.textChanged.connect(self.on_node_label_changed)
+
+        self._parents = {}
+
     @property
     def caption(self):
         return self.name
+
+    def on_node_label_changed(self):
+        # TODO Ensure that node id is unique
+        self._var_name = self.node_label.text()
+        s.CAUSAL_GRAPH_INITIALIZER.mark_stale()
+        self.data_updated.emit(0)
+
+    def set_in_data(self, data: NodeData, port: Port):
+        """
+        This node was connected to an initializer node
+        Parameters
+        ----------
+        data : NodeData
+        port : Port
+        """
+
+        self._parents[port.index] = data
+
+        if self._check_inputs():
+            print("INPUTS CHECK OUT")
+            with self._compute_lock():
+                print("COMPUTING")
+                self.compute()
+        else:
+            s.CAUSAL_GRAPH_INITIALIZER.mark_stale()
+
+    def _check_inputs(self):
+        """
+        Validate that the initializer is valid
+        :return:
+        """
+
+        # Check initializer
+        if s.CAUSAL_GRAPH_DEFINITION is None:
+            return False
+
+        # Remove stale parents
+        for k in list(self._parents.keys()):
+            if k not in self.data_type[PortType.input]:
+                self._parents.pop(k)
+
+        parents_ok = {}
+
+        # Determine if each input is both connected and the correct type
+        for p_idx, p_type in self.data_type[PortType.input].items():
+            parents_ok[p_idx] = (p_idx in self._parents and
+                                 self._parents[p_idx] is not None and
+                                 self._parents[p_idx].data_type.id in ('initialize',))
+
+        print(self._parents)
+        print(parents_ok)
+
+        # If ANY of the inputs are unconnected or typed incorrectly, give the user a warning
+        if not all(parents_ok.values()):
+            self._validation_state = NodeValidationState.warning
+            self._validation_message = "Missing or incorrect inputs"
+            self._result = None
+            self.data_updated.emit(0)
+            return False
+
+        # Otherwise, the node is valid
+        self._validation_state = NodeValidationState.valid
+        self._validation_message = ''
+        self.data_updated.emit(0)
+        return True
+
+    @contextlib.contextmanager
+    def _compute_lock(self):
+
+        # Check if inputs are not set
+        parents_ok = {}
+        for p_idx, p_type in self.data_type[PortType.input].items():
+            parents_ok[p_idx] = (p_idx in self._parents and
+                                 self._parents[p_idx] is not None)
+
+        if not all(parents_ok.values()):
+            raise RuntimeError('Inputs not set.')
+
+        # Set all the locks (make sure that we properly release the lock if we cannot use 'with' statements)
+        with contextlib.ExitStack() as stack:
+            locks = [stack.enter_context(self._parents[p_idx].lock)
+                     for p_idx in self.data_type[PortType.input].keys()]
+            yield
+
+        # Mark that the data has been updated
+        self.data_updated.emit(0)
 
     def out_data(self, port: int) -> NodeData:
         return self._result
@@ -157,7 +296,7 @@ class ExogenousVariableDataModel(NodeDataModel):
         return self._validation_message
 
     def save(self) -> dict:
-        'Add to the JSON dictionary to save the state of the NumberSource'
+        """Add to the JSON dictionary to save the state of the NumberSource"""
         doc = super().save()
         if self._validation_state == NodeValidationState.valid:
             doc['variable_id'] = self._var_id
@@ -165,7 +304,7 @@ class ExogenousVariableDataModel(NodeDataModel):
         return doc
 
     def restore(self, state: dict):
-        'Restore the number from the JSON dictionary'
+        """Restore the number from the JSON dictionary"""
         try:
             self._var_id = state["variable_id"]
             self._var_name = state["variable_name"]
@@ -174,8 +313,70 @@ class ExogenousVariableDataModel(NodeDataModel):
         else:
             self._result = VariableData(self._var_id, self._var_name)
 
+    def embedded_widget(self) -> QtWidgets.QWidget:
+        return self.main_widget
+
     def compute(self):
+        print("THIS SHOULD NOT BE COMPUTED")
         ...
+
+
+class BinomialExogenousVariableModel(ExogenousVariableDataModel):
+    name = "Binomial"
+
+    def __init__(self, style=None, parent=None):
+        super().__init__(style=style, parent=parent)
+
+        self._probability_choice = QtWidgets.QDoubleSpinBox()
+        self._probability_choice.setMaximum(1.0)
+        self._probability_choice.setMinimum(0.0)
+        self._probability_choice.setSingleStep(0.1)
+        self._probability_choice.setValue(0.5)
+
+        self.main_widget.node_layout.addWidget(self._probability_choice)
+
+        self._probability_choice.valueChanged.connect(self.on_probability_changed)
+
+    def on_probability_changed(self):
+        s.CAUSAL_GRAPH_INITIALIZER.mark_stale()
+        self.data_updated.emit(0)
+
+    def compute(self):
+        print("BINOMIAL NODE COMPUTE")
+        if s.CAUSAL_GRAPH_DEFINITION is None:
+            self._validation_state = NodeValidationState.error
+            self._validation_message = 'No root causal graph. (Graph may be uninitialized)'
+            self._result = None
+            return
+
+        s.CAUSAL_GRAPH_DEFINITION.add_node(self._var_name)
+
+        p = self._probability_choice.value()
+        cpd_table = TabularCPD(self._var_name, 2, [[1-p], [p]])
+        s.CAUSAL_GRAPH_DEFINITION.add_cpds(cpd_table)
+
+        print(s.CAUSAL_GRAPH_DEFINITION)
+
+        self._validation_state = NodeValidationState.valid
+        self._validation_message = ''
+        self._result = VariableData(self._var_id, self._var_name)
+
+    def save(self) -> dict:
+        """Add to the JSON dictionary to save the state of the NumberSource"""
+        doc = super().save()
+        if self._validation_state == NodeValidationState.valid:
+            doc['probability'] = self._probability_choice.value()
+        return doc
+
+    def restore(self, state: dict):
+        """Restore the number from the JSON dictionary"""
+        try:
+            p = state["probability"]
+        except Exception:
+            ...
+        else:
+            # TODO: Check to make sure attribute is valid
+            self._probability_choice.setValue(p)
 
 
 class ObservedExogenousVariableModel(ExogenousVariableDataModel):
@@ -190,6 +391,8 @@ class ObservedExogenousVariableModel(ExogenousVariableDataModel):
         self._attribute_choice.currentTextChanged.connect(self.on_choice)
         s.sig_attribute_loaded.valueUpdated.connect(self.on_attribute_load)
 
+        self.main_widget.node_layout.addWidget(self._attribute_choice)
+
     def compute(self):
         if self._attribute_choice.currentText() == '<None Selected>':
             self._validation_state = NodeValidationState.error
@@ -202,14 +405,14 @@ class ObservedExogenousVariableModel(ExogenousVariableDataModel):
             self._result = VariableData(self._var_id, self._var_name)
 
     def save(self) -> dict:
-        'Add to the JSON dictionary to save the state of the NumberSource'
+        """Add to the JSON dictionary to save the state of the NumberSource"""
         doc = super().save()
         if self._validation_state == NodeValidationState.valid:
             doc['attribute'] = self._attribute_choice.currentText()
         return doc
 
     def restore(self, state: dict):
-        'Restore the number from the JSON dictionary'
+        """Restore the number from the JSON dictionary"""
         try:
             attribute = state["attribute"]
         except Exception:
@@ -217,9 +420,6 @@ class ObservedExogenousVariableModel(ExogenousVariableDataModel):
         else:
             # TODO: Check to make sure attribute is valid
             self._attribute_choice.setCurrentText(attribute)
-
-    def embedded_widget(self) -> QtWidgets.QWidget:
-        return self._attribute_choice
 
     def on_choice(self, string: str):
         attribute = self._attribute_choice.currentText()
@@ -247,7 +447,7 @@ class VariableInputNodeModel(NodeDataModel):
         'output': 1,
     }
     port_caption = {
-        'input': {0: 'In'},
+        'input': {0: 'a'},
         'output': {0: 'Out'}
     }
     port_caption_visible = True
@@ -339,7 +539,7 @@ class VariableInputNodeModel(NodeDataModel):
 
         for i in range(num_parents):
             new_data_types[PortType.input][i] = VariableData.data_type
-            new_port_captions['input'][i] = 'In'
+            new_port_captions['input'][i] = "abcdefghijklmnopqrstuvwxyz"[i]  # 'In'
 
         self.ports_updated.emit(num_parents)
 
@@ -361,15 +561,15 @@ class VariableInputNodeModel(NodeDataModel):
                                'max_inputs': self.max_inputs
                                })
 
-
-
         # Trigger redraw
+        s.CAUSAL_GRAPH_INITIALIZER.mark_stale()
         self.embedded_widget_size_updated.emit()
         self.data_updated.emit(0)
 
 
 class EndogenousVariableDataModel(VariableInputNodeModel):
     name = "ABSTRACT Endogenous Variable"
+    num_instances = 0
 
     def __init__(self, style=None, parent=None):
         super().__init__(style=style, parent=parent)
@@ -377,6 +577,13 @@ class EndogenousVariableDataModel(VariableInputNodeModel):
         self._result = None
         self._validation_state = NodeValidationState.warning
         self._validation_message = 'Uninitialized'
+
+        self._var_name = str(self.name) + f'_{type(self).num_instances}'
+        self._var_id = self._var_name.lower()
+        type(self).num_instances += 1
+        self.node_label = QtWidgets.QLineEdit(self._var_name)
+        self.main_widget.node_layout.addWidget(self.node_label)
+        self.node_label.textChanged.connect(self.on_node_label_changed)
 
         self._parents = {}
 
@@ -387,6 +594,12 @@ class EndogenousVariableDataModel(VariableInputNodeModel):
     @property
     def num_parents(self):
         return self.num_ports['input']
+
+    def on_node_label_changed(self):
+        # TODO Ensure that node id is unique
+        self._var_name = self.node_label.text()
+        s.CAUSAL_GRAPH_INITIALIZER.mark_stale()
+        self.data_updated.emit(0)
 
     def _check_inputs(self):
 
@@ -403,8 +616,8 @@ class EndogenousVariableDataModel(VariableInputNodeModel):
                                  self._parents[p_idx] is not None and
                                  self._parents[p_idx].data_type.id in ('variable',))
 
-        print(self._parents)
-        print(parents_ok)
+        #print(self._parents)
+        #print(parents_ok)
 
         # If ANY of the inputs are unconnected or typed incorrectly, give the user a warning
         if not all(parents_ok.values()):
@@ -467,6 +680,8 @@ class EndogenousVariableDataModel(VariableInputNodeModel):
         if self._check_inputs():
             with self._compute_lock():
                 self.compute()
+        else:
+            s.CAUSAL_GRAPH_INITIALIZER.mark_stale()
 
     def validation_state(self) -> NodeValidationState:
         return self._validation_state
@@ -489,7 +704,7 @@ class StubEndogenousVariableDataModel(EndogenousVariableDataModel):
 
 
 class TabularEndogenousVariableDataModel(EndogenousVariableDataModel):
-    name = "Tabular CPD Variable"
+    name = "Tabular"
 
     def __init__(self, style=None, parent=None):
         super().__init__(style=style, parent=parent)
@@ -503,7 +718,7 @@ class TabularEndogenousVariableDataModel(EndogenousVariableDataModel):
         self._choose_outputs.setMaximum(2)
         self._choose_outputs.setValue(2)
 
-        # Table of proabilities
+        # Table of probabilities
         self._labels = list(i for i in itertools.product(
             *[[c, '~'+c] for c in 'abcdefghijklmnopqrstuvwxyz'[:self.num_parents]]))
         self._table = np.ones((self._choose_outputs.value(), len(self._labels))) / self._choose_outputs.value()
@@ -524,7 +739,31 @@ class TabularEndogenousVariableDataModel(EndogenousVariableDataModel):
         self._table_model.dataChanged.connect(self._table_updated)
 
     def compute(self):
-        pass
+        print("TABLUAR NODE COMPUTE")
+
+        # Get list of parents
+        parents = sorted([parent.variable_name for _, parent in self._parents.items()])
+
+        # Create node
+        s.CAUSAL_GRAPH_DEFINITION.add_node(self._var_name)
+
+        print(self._table)
+        table_cpd = TabularCPD(self._var_name, 2, self._table,
+                                evidence=parents, evidence_card=[2] * len(parents))
+        s.CAUSAL_GRAPH_DEFINITION.add_cpds(table_cpd)
+
+        # Create edges
+        for parent in parents:
+            s.CAUSAL_GRAPH_DEFINITION.add_edge(parent, self._var_name)
+
+        print(s.CAUSAL_GRAPH_DEFINITION)
+
+        self._validation_state = NodeValidationState.valid
+        self._validation_message = ''
+        self._result = VariableData(self._var_id, self._var_name)
+
+
+
 
     def _update_inputs(self):
         super(TabularEndogenousVariableDataModel, self)._update_inputs()
@@ -563,6 +802,9 @@ class TabularEndogenousVariableDataModel(EndogenousVariableDataModel):
         self._table[int(not qIndex.row()), qIndex.column()] = 1 - new_value
 
         self._draw_table()
+
+        s.CAUSAL_GRAPH_INITIALIZER.mark_stale()
+        self.data_updated.emit(0)
 
 
 """
