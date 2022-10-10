@@ -1,5 +1,6 @@
 import numpy as np
 
+from enum import Enum
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import cohen_kappa_score
@@ -7,6 +8,10 @@ from sklearn.exceptions import ConvergenceWarning
 
 import NeuralPathways.session as s
 
+
+class CorrelationMethod(Enum):
+    PEARSON = 0
+    LOG_REG = 1
 
 def extract_pathways(**args):
 
@@ -24,6 +29,9 @@ def compute_pathway_alignments(**args):
 
     if s.PATHWAYS_ACTIVATIONS is None:
         print("ERROR: pathways must be extracted.")
+
+    if args['method'] != CorrelationMethod.LOG_REG and args['method'] != CorrelationMethod.PEARSON:
+        print("ERROR: unknown correlation method attempted")
 
     for attribute, state in s.ATTRIBUTE_CHECKLIST_STATE.items():
         if not state['checked']:

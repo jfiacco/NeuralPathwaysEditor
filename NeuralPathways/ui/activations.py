@@ -36,6 +36,7 @@ class ActivationWidget(QtWidgets.QWidget):
         # Create layout for extracting pathways
         vLayoutExtraction = QtWidgets.QVBoxLayout()
 
+        # TODO: implement Factor Analysis option
         self.dimReductionLbl = QtWidgets.QLabel("Dimensionality Reduction Technique:")
         vLayoutExtraction.addWidget(self.dimReductionLbl)
 
