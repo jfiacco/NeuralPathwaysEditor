@@ -62,12 +62,12 @@ class AppTabs(QWidget):
         # Create Pathways Analysis tab
         self.tab_causal_structure.layout = QVBoxLayout(self)
         self.causalityWidget = CausalityWidget(self.bridgeLoadAttributes)
-        self.tab_causal_structure.layout.addWidget(self.causalityWidget)
+        # TODO: complete causality tab
+        # self.tab_causal_structure.layout.addWidget(self.causalityWidget)
+        # self.debugButton = QPushButton("DEBUG")
+        # self.tab_causal_structure.layout.addWidget(self.debugButton)
+        # self.debugButton.clicked.connect(self.debugPrint)
 
-
-        #self.debugButton = QPushButton("DEBUG")
-        #self.tab_causal_structure.layout.addWidget(self.debugButton)
-        #self.debugButton.clicked.connect(self.debugPrint)
         self.tab_causal_structure.setLayout(self.tab_causal_structure.layout)
 
         # Add tabs to widget
