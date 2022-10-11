@@ -63,6 +63,8 @@ class AppTabs(QWidget):
         self.tab_causal_structure.layout = QVBoxLayout(self)
         self.causalityWidget = CausalityWidget(self.bridgeLoadAttributes)
         self.tab_causal_structure.layout.addWidget(self.causalityWidget)
+
+
         #self.debugButton = QPushButton("DEBUG")
         #self.tab_causal_structure.layout.addWidget(self.debugButton)
         #self.debugButton.clicked.connect(self.debugPrint)

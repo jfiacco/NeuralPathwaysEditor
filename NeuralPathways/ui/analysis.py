@@ -198,6 +198,7 @@ class AnalysisWidget(QtWidgets.QWidget):
         self._refreshPlots()
     def on_corr_class_select(self, cbox):
         print(cbox.currentText(), cbox.PATHWAYS_attribute)
+        s.ATTRIBUTE_CHECKLIST_STATE[cbox.PATHWAYS_attribute]['corr_class'] = cbox.currentText()
 
     def on_attribute_loaded(self):
         print("Attributes Loaded")
@@ -210,10 +211,19 @@ class AnalysisWidget(QtWidgets.QWidget):
         # Get class values ()
         for a in s.ATTRIBUTE_MODEL.df.columns:
             classes = sorted(s.ATTRIBUTE_MODEL.df[a].unique())
-            if len(classes) > 25:
-                s.ATTRIBUTE_CHECKLIST_STATE[a]['classes'] = '<EXCEEDS MAX>'
+            if len(classes) > 5 or len(classes) <= 1:
+                s.ATTRIBUTE_CHECKLIST_STATE[a]['classes'] = ['n/a']
+                s.ATTRIBUTE_CHECKLIST_STATE[a]['checked'] = False
             else:
                 s.ATTRIBUTE_CHECKLIST_STATE[a]['classes'] = classes
+
+            if len(classes) == 2 and any([str(classes[0]) == "0" and str(classes[1]) == "1",
+                                         str(classes[0]).lower() == 'false' and str(classes[1]).lower() == 'true',
+                                         str(classes[0]).lower() == 'n' and str(classes[1]).lower() == 'y',
+                                         str(classes[0]).lower() == 'no' and str(classes[1]).lower() == 'yes']):
+                s.ATTRIBUTE_CHECKLIST_STATE[a]['corr_class'] = s.ATTRIBUTE_CHECKLIST_STATE[a]['classes'][1]
+            else:
+                s.ATTRIBUTE_CHECKLIST_STATE[a]['corr_class'] = s.ATTRIBUTE_CHECKLIST_STATE[a]['classes'][0]
 
         self.dataColumnChoiceBox.clear()
         self.goldLabelChoiceBox.clear()
@@ -250,6 +260,7 @@ class AnalysisWidget(QtWidgets.QWidget):
             corr_class_item = QStandardItem()
             corr_class_cbox = QtWidgets.QComboBox()
             corr_class_cbox.addItems([str(cls) for cls in state['classes']])
+            corr_class_cbox.setCurrentText(str(state['corr_class']))
             corr_class_cbox.currentTextChanged.connect(partial(self.on_corr_class_select,
                                                                cbox=corr_class_cbox))
             corr_class_cbox.PATHWAYS_attribute = attribute
@@ -268,7 +279,7 @@ class AnalysisWidget(QtWidgets.QWidget):
         self.attributesListModel.setHeaderData(2, Qt.Horizontal, "Corr. Class")
         self.attributesListModel.setHeaderData(3, Qt.Horizontal, "Display?")
 
-        # # Center Display column (NO WORKING)
+        # # Center Display column (NOT WORKING)
         # delegate = AlignmentDelegate(self.attributesListView)
         # self.attributesListView.setItemDelegate(delegate)
         # delegate.set_column_alignment(3, Qt.AlignCenter)
@@ -328,6 +339,9 @@ class AnalysisWidget(QtWidgets.QWidget):
                               if state['visible'] and state['checked']]
         self.axes = self.plotView.figure.subplots(len(visible_attributes), sharex=True, sharey=True)
 
+        if not isinstance(self.axes, np.ndarray):
+            self.axes = [self.axes]
+
         for i, attribute in enumerate(visible_attributes):
             self.axes[i].clear()
 
@@ -348,11 +362,19 @@ class AnalysisWidget(QtWidgets.QWidget):
 
             self.axes[i].set_ylabel(attribute)
 
-            if len(s.ATTRIBUTE_ALIGNMENT_CLFS) > 1:
-                # TODO: in multiclass attributes, we are only correlating to one class (index 0)
-                print(s.ATTRIBUTE_ALIGNMENT_CLFS[attribute].coef_.shape)
+            target = s.ATTRIBUTE_CHECKLIST_STATE[attribute]['corr_class']
+
+            if len(s.ATTRIBUTE_ALIGNMENT_CLFS) >= 1 and \
+                    s.ATTRIBUTE_ALIGNMENT_CLFS[attribute].coef_.shape[0] > 1 and \
+                    target != "n/a":
+                idx = list(s.ATTRIBUTE_ALIGNMENT_CLFS[attribute].classes_).index(target)
+                y = s.ATTRIBUTE_ALIGNMENT_CLFS[attribute].coef_[idx]
+            elif len(s.ATTRIBUTE_ALIGNMENT_CLFS) >= 1 and \
+                    s.ATTRIBUTE_ALIGNMENT_CLFS[attribute].coef_.shape[0] == 1 and \
+                    target != "n/a":
                 y = s.ATTRIBUTE_ALIGNMENT_CLFS[attribute].coef_[0]
             else:
+                print('n/a')
                 y = [0] * len(x)
             self.axes[i].bar(x, y,
                              color=['blue' if np.abs(v) > s.ATTRIBUTE_CHECKLIST_STATE[attribute]['threshold']
