@@ -1,6 +1,8 @@
 import numpy as np
 
+from functools import cached_property
 from qtpy.QtCore import QObject, Signal
+from qtpy.QtWidgets import QStyledItemDelegate
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
 
 from scipy.stats import pearsonr
@@ -75,3 +77,18 @@ class PearsonCorrelationClassifier(BaseEstimator, ClassifierMixin):
 
         #closest = np.argmin(euclidean_distances(X, self.X_), axis=1)
         return [self.classes_[0]] * X.shape[0]
+
+
+class AlignmentDelegate(QStyledItemDelegate):
+    @cached_property
+    def alignment(self):
+        return dict()
+
+    def set_column_alignment(self, column, alignment):
+        self.alignment[column] = alignment
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        alignment = self.alignment.get(index.column(), None)
+        if alignment is not None:
+            option.displayAlignment = alignment

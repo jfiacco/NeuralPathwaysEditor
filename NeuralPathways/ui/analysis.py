@@ -2,6 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 
 from collections import OrderedDict
+from functools import partial
 from matplotlib.figure import Figure
 from matplotlib.backend_bases import MouseButton
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -12,7 +13,7 @@ from qtpy.QtGui import QStandardItemModel, QStandardItem, QFont
 import NeuralPathways.session as s
 import NeuralPathways.pathways as p
 
-from NeuralPathways.utilities import NavigationToolbar
+from NeuralPathways.utilities import NavigationToolbar, AlignmentDelegate
 
 
 class AnalysisWidget(QtWidgets.QWidget):
@@ -34,9 +35,11 @@ class AnalysisWidget(QtWidgets.QWidget):
         corrSectionLbl.setFont(boldFont)
 
         attributes = s.ATTRIBUTE_MODEL.df.columns
-        self.attributesListModel = QStandardItemModel(len(attributes), 2)
+        self.attributesListModel = QStandardItemModel(len(attributes), 4)
         self.attributesListModel.setHeaderData(0, Qt.Horizontal, "Attributes")
         self.attributesListModel.setHeaderData(1, Qt.Horizontal, "Threshold")
+        self.attributesListModel.setHeaderData(2, Qt.Horizontal, "Corr. Class")
+        self.attributesListModel.setHeaderData(3, Qt.Horizontal, "Display?")
 
         self.attributesListView = QtWidgets.QTreeView()
         self.attributesListView.setModel(self.attributesListModel)
@@ -110,7 +113,7 @@ class AnalysisWidget(QtWidgets.QWidget):
         self.goldLabelChoiceBox.currentTextChanged.connect(self.chooseGoldLabels)
         self.predLabelChoiceBox.currentTextChanged.connect(self.choosePredictions)
 
-        hLayoutFull.addLayout(vLayoutProperties, 1)
+        hLayoutFull.addLayout(vLayoutProperties, 2)
 
         # Pathways viewer
         vLayoutPlots = QtWidgets.QVBoxLayout()
@@ -125,7 +128,7 @@ class AnalysisWidget(QtWidgets.QWidget):
 
         vLayoutPlots.addWidget(self.plotToolbar)
         vLayoutPlots.addWidget(self.plotScroll)
-        hLayoutFull.addLayout(vLayoutPlots, 2)
+        hLayoutFull.addLayout(vLayoutPlots, 3)
 
         # self.plot = pg.MultiPlotWidget()
         #
@@ -189,11 +192,28 @@ class AnalysisWidget(QtWidgets.QWidget):
         self._refreshAttributeList()
         self._refreshPlots()
 
+    def on_attribute_chk_toggle(self, state, chk_box):
+        print(state, chk_box.PATHWAYS_attribute)
+        s.ATTRIBUTE_CHECKLIST_STATE[chk_box.PATHWAYS_attribute]['checked'] = bool(state)
+        self._refreshPlots()
+    def on_corr_class_select(self, cbox):
+        print(cbox.currentText(), cbox.PATHWAYS_attribute)
+
     def on_attribute_loaded(self):
+        print("Attributes Loaded")
+
         s.ATTRIBUTE_CHECKLIST_STATE = OrderedDict((a, {'checked': True,
                                                        'threshold': s.DEFAULT_PROBE_THRESHOLD,
                                                        'visible': True})
                                                   for a in s.ATTRIBUTE_MODEL.df.columns)
+
+        # Get class values ()
+        for a in s.ATTRIBUTE_MODEL.df.columns:
+            classes = sorted(s.ATTRIBUTE_MODEL.df[a].unique())
+            if len(classes) > 25:
+                s.ATTRIBUTE_CHECKLIST_STATE[a]['classes'] = '<EXCEEDS MAX>'
+            else:
+                s.ATTRIBUTE_CHECKLIST_STATE[a]['classes'] = classes
 
         self.dataColumnChoiceBox.clear()
         self.goldLabelChoiceBox.clear()
@@ -214,12 +234,44 @@ class AnalysisWidget(QtWidgets.QWidget):
             if attribute == s.GOLD_LABEL_ATTRIBUTE or attribute == s.PRED_LABEL_ATTRIBUTE:
                 continue
             list_item = QStandardItem(attribute)
-            list_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            list_item.setData(Qt.Checked if state['checked'] else Qt.Unchecked, Qt.CheckStateRole)
-            self.attributesListModel.appendRow((list_item, QStandardItem(str(state['threshold']))))
+            #list_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            #list_item.setData(Qt.Checked if state['checked'] else Qt.Unchecked, Qt.CheckStateRole)
+
+            # Set up check mark
+            display_item = QStandardItem()
+            display_checkbox = QtWidgets.QCheckBox()
+            display_checkbox.setChecked(s.ATTRIBUTE_CHECKLIST_STATE[attribute]['checked'])
+            display_checkbox.stateChanged.connect(partial(self.on_attribute_chk_toggle,
+                                                          chk_box=display_checkbox))
+
+            display_checkbox.PATHWAYS_attribute = attribute
+
+            # Set up choice for which class to correlate with
+            corr_class_item = QStandardItem()
+            corr_class_cbox = QtWidgets.QComboBox()
+            corr_class_cbox.addItems([str(cls) for cls in state['classes']])
+            corr_class_cbox.currentTextChanged.connect(partial(self.on_corr_class_select,
+                                                               cbox=corr_class_cbox))
+            corr_class_cbox.PATHWAYS_attribute = attribute
+
+            self.attributesListModel.appendRow((list_item,
+                                                QStandardItem(str(state['threshold'])),
+                                                corr_class_item,
+                                                display_item))
+
+            # Register inline widgets
+            self.attributesListView.setIndexWidget(corr_class_item.index(), corr_class_cbox)
+            self.attributesListView.setIndexWidget(display_item.index(), display_checkbox)
 
         self.attributesListModel.setHeaderData(0, Qt.Horizontal, "Attributes")
         self.attributesListModel.setHeaderData(1, Qt.Horizontal, "Threshold")
+        self.attributesListModel.setHeaderData(2, Qt.Horizontal, "Corr. Class")
+        self.attributesListModel.setHeaderData(3, Qt.Horizontal, "Display?")
+
+        # # Center Display column (NO WORKING)
+        # delegate = AlignmentDelegate(self.attributesListView)
+        # self.attributesListView.setItemDelegate(delegate)
+        # delegate.set_column_alignment(3, Qt.AlignCenter)
 
         self.attributesListView.repaint()
 
@@ -272,7 +324,8 @@ class AnalysisWidget(QtWidgets.QWidget):
         #y = np.sin(x ** 2)  # TEST DATA
         # self.plotView.figure.set_figheight(20)
 
-        visible_attributes = [a for a, state in s.ATTRIBUTE_CHECKLIST_STATE.items() if state['visible']]
+        visible_attributes = [a for a, state in s.ATTRIBUTE_CHECKLIST_STATE.items()
+                              if state['visible'] and state['checked']]
         self.axes = self.plotView.figure.subplots(len(visible_attributes), sharex=True, sharey=True)
 
         for i, attribute in enumerate(visible_attributes):
