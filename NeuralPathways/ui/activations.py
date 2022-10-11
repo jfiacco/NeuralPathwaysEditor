@@ -41,7 +41,8 @@ class ActivationWidget(QtWidgets.QWidget):
         vLayoutExtraction.addWidget(self.dimReductionLbl)
 
         self.dimReductionChoiceBox = QtWidgets.QComboBox()
-        self.dimReductionChoiceBox.addItems(["PCA"])
+        self.dimReductionChoiceBox.addItems(["Factor Analysis", "PCA"])
+        self.dimReductionChoiceBox.setCurrentText("Factor Analysis")
         vLayoutExtraction.addWidget(self.dimReductionChoiceBox)
         self.dimReductionChoiceBox.currentTextChanged.connect(self.chooseDimensionalityReduction)
 

@@ -296,6 +296,8 @@ class AnalysisWidget(QtWidgets.QWidget):
             self.axes[i].set_ylabel(attribute)
 
             if len(s.ATTRIBUTE_ALIGNMENT_CLFS) > 1:
+                # TODO: in multiclass attributes, we are only correlating to one class (index 0)
+                print(s.ATTRIBUTE_ALIGNMENT_CLFS[attribute].coef_.shape)
                 y = s.ATTRIBUTE_ALIGNMENT_CLFS[attribute].coef_[0]
             else:
                 y = [0] * len(x)
@@ -328,10 +330,8 @@ class AnalysisWidget(QtWidgets.QWidget):
                 self.lastSelectedBox.set_facecolor(self.lastColor)
 
             self.lastColor = bar.get_facecolor()
-            print(self.lastColor)
             self.lastSelectedBox = bar
             bar.set_facecolor('red')
-            print(bar.get_facecolor())
 
             self.inspectionPathway = idx
             self.inspectionAttribute = attribute
