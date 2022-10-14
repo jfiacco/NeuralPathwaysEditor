@@ -1,5 +1,4 @@
 import numpy as np
-import pyqtgraph as pg
 
 from collections import OrderedDict
 from functools import partial
@@ -211,7 +210,7 @@ class AnalysisWidget(QtWidgets.QWidget):
         # Get class values ()
         for a in s.ATTRIBUTE_MODEL.df.columns:
             classes = sorted(s.ATTRIBUTE_MODEL.df[a].unique())
-            if len(classes) > 5 or len(classes) <= 1:
+            if len(classes) > 50 or len(classes) <= 1:
                 s.ATTRIBUTE_CHECKLIST_STATE[a]['classes'] = ['n/a']
                 s.ATTRIBUTE_CHECKLIST_STATE[a]['checked'] = False
             else:

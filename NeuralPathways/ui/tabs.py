@@ -29,7 +29,7 @@ class AppTabs(QWidget):
         #self.tabs.addTab(self.tab_create_attributes, "Create Attributes")
         self.tabs.addTab(self.tab_activation_viewer, "Extract")
         self.tabs.addTab(self.tab_pathways_viewer, "Pathways")
-        self.tabs.addTab(self.tab_causal_structure, "Causal Structure")
+        #self.tabs.addTab(self.tab_causal_structure, "Causal Structure")
 
         # Create attribute viewer tab
         self.tab_attribue_view.layout = QVBoxLayout(self)
@@ -64,6 +64,7 @@ class AppTabs(QWidget):
         self.causalityWidget = CausalityWidget(self.bridgeLoadAttributes)
         # TODO: complete causality tab
         # self.tab_causal_structure.layout.addWidget(self.causalityWidget)
+
         # self.debugButton = QPushButton("DEBUG")
         # self.tab_causal_structure.layout.addWidget(self.debugButton)
         # self.debugButton.clicked.connect(self.debugPrint)
