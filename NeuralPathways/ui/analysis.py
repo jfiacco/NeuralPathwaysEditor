@@ -1,5 +1,4 @@
 import numpy as np
-
 from collections import OrderedDict
 from functools import partial
 from matplotlib.figure import Figure
