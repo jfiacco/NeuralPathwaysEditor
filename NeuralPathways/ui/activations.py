@@ -67,9 +67,10 @@ class ActivationWidget(QtWidgets.QWidget):
         vLayoutExtraction.addStretch()
 
         pathways_info = s.PATHWAYS_INFO_MODEL.df.columns
-        self.pathwaysInfoModel = QStandardItemModel(len(pathways_info), 2)
+        self.pathwaysInfoModel = QStandardItemModel(len(pathways_info), 3)
         self.pathwaysInfoModel.setHeaderData(0, Qt.Horizontal, "Pathway")
         self.pathwaysInfoModel.setHeaderData(1, Qt.Horizontal, "% Variance Explained")
+        self.pathwaysInfoModel.setHeaderData(2, Qt.Horizontal, "Top Activations")
 
         self.pathwaysInfoView = QtWidgets.QTreeView()
         self.pathwaysInfoView.setModel(self.pathwaysInfoModel)
@@ -163,15 +164,20 @@ class ActivationWidget(QtWidgets.QWidget):
                                         format(num_pathways,
                                                '' if num_pathways == 1 else 's'))
 
+
         self.pathwaysInfoModel.clear()
 
-
         for i, v in zip(range(s.PATHWAYS_MODEL.n_components_), s.PATHWAYS_MODEL.explained_variance_ratio_):
-            print(i,v)
-            self.pathwaysInfoModel.appendRow((QStandardItem(str(i)), QStandardItem(f"{v*100:.03f}%")))
+            loadings = s.PATHWAYS_MODEL.components_[i]
+            neuron_names = s.ACTIVATION_NEURONS
+            top_loadings = [f"{neuron_names[k]}:{loadings[k]:.03f}" for k in np.argsort(np.abs(loadings))[::-1]]
+            self.pathwaysInfoModel.appendRow((QStandardItem(str(i)),
+                                              QStandardItem(f"{v*100:.03f}%"),
+                                              QStandardItem(str(top_loadings))))
 
         self.pathwaysInfoModel.setHeaderData(0, Qt.Horizontal, "Pathway")
         self.pathwaysInfoModel.setHeaderData(1, Qt.Horizontal, "% Variance Explained")
+        self.pathwaysInfoModel.setHeaderData(2, Qt.Horizontal, "Top Activations")
         self.pathwaysInfoView.repaint()
 
 
