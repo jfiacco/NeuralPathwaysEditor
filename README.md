@@ -1,4 +1,6 @@
-# NeuralPathwaysEditor
+# Neural Pathways Editor
+
+A work-in-progress viewer for functional components within a neural model.
 
 Currently the best paper to cite for this is:
 
