@@ -88,7 +88,7 @@ Select the pathway extraction method with the dropdown menu. The default method 
 As a guideline, it is recommended to aim for a percent variance that yields approximately one-tenth the number of pathways as there are neurons in your model. This ratio is suggested as a starting point and can be adjusted based on the specific requirements of your task.
 
 **Step 4 - Extracting Pathways:**
-Once all settings are confirmed, proceed to extract the pathways by clicking the `Extract Pathways' button. The tool will process the neuron activations using your specified method and variance target, resulting in a set of neural pathways for further analysis. The number of pathways and each of their percent variance explained will be displayed above the `Extract' button. The percent variance explained and the method for extraction can be changed after extraction, but you must use the `Extract' button to extract pathways with the new settings.
+Once all settings are confirmed, proceed to extract the pathways by clicking the 'Extract Pathways' button. The tool will process the neuron activations using your specified method and variance target, resulting in a set of neural pathways for further analysis. The number of pathways and each of their percent variance explained will be displayed above the `Extract' button. The percent variance explained and the method for extraction can be changed after extraction, but you must use the `Extract' button to extract pathways with the new settings.
 
 ### Determining Pathway Correlations
 
@@ -117,7 +117,7 @@ By default, the tool uses Pearson's R value for correlation. An alternative opti
 This section of the user guide describes the process of conducting a qualitative analysis on the pathways using the Pathways Analysis Tool. This analysis involves interacting with the correlation bar graphs to explore the data instances most associated with specific pathways and to understand the connection between these pathways and attributes.
 
 **Step 1 - Interacting with the Correlation Bar Graphs:**
-1. _Locate the Correlation Bar Graphs_: Ensure you are in the \textsc{Pathways} tab where the correlation bar graphs are displayed following your analysis.
+1. _Locate the Correlation Bar Graphs_: Ensure you are in the _Pathways_ tab where the correlation bar graphs are displayed following your analysis.
 2. _Select a Pathway for Analysis_: Click on one of the bars in the correlation bar graphs. The bar you select represents a specific pathway and its correlation with an attribute.
 
 Upon clicking, the selected bar will be highlighted, indicating it is the focus of your qualitative analysis.
